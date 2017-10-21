@@ -24,7 +24,7 @@ extern char *tmp_buf;
 //记录摄像头打开状态
 extern int on_off;
 
-int init_dev();
+int init_dev(const char *camDev);
 
 int uninit_dev();
 

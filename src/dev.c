@@ -24,8 +24,10 @@ int okindex;
 char *tmp_buf;
 int on_off;
 
-int init_dev()
+int init_dev(const char *camDev)
 {
+	//打开摄像头
+	camera_fd = open(camDev, O_RDWR|O_NONBLOCK);
 	//初始化视频格式
 	init_fmt();
 	//初始化内存映射
@@ -137,7 +139,7 @@ int get_frame()
 		tv.tv_usec = 0;
 	}
 	res = ioctl(camera_fd,VIDIOC_DQBUF,&buf);
-	suc_err(res,"Dq_buf");
+	//suc_err(res,"Dq_buf");
 
 	//buf.index表示已经刷新好的可用的缓存索引号
 	okindex = buf.index;
@@ -146,15 +148,9 @@ int get_frame()
 	//第n次捕获图片:(第n回刷新整个缓存队列-第n个缓存被刷新)
 	//printf("Image_%03d:(%d-%d)\n",counter,counter / bufs_num,okindex);
 
-	//把一张图片放入缓存
-	int fd = open("a.jpg", O_RDWR|O_CREAT|O_TRUNC);
-	suc_err(fd, "open");
-	print_picture(fd, buffer[okindex].start, buffer[okindex].length);
-	close(fd);
-
 	//把图像放入缓存队列中(入列)
 	res = ioctl(camera_fd,VIDIOC_QBUF,&buf);
-	suc_err(res,"Q_buf");
+	//suc_err(res,"Q_buf");
 
 	return 0;
 }

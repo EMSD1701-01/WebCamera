@@ -1,143 +1,154 @@
-#include "server.h"
-#include "merrno.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/time.h>
+#include <pthread.h>
+#include <signal.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 
-static char *trim(char *cmd);
+#include "dev.h"
+#include "merrno.h"
+#include "service.h"
+#include "print.h"
 
-int initServer(unsigned short port)
+#define MAX_CLIENTS_COUNT 128
+
+static int clients[MAX_CLIENTS_COUNT];
+static size_t clientCount = 0;
+
+/**
+ * 获取有效用户数量
+ * @return 返回有效用户个数
+ */
+size_t getValidClient();
+
+//初始化线程锁
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/**
+ * 接收客户端线程
+ */
+void *tAcceptClient(void *arg)
 {
-	//创建serverSocket
-	int serverSocket;
-	serverSocket = socket(AF_INET, SOCK_STREAM, 0);
-
-	//配置地址
-	struct sockaddr_in serverAddr;
-	memset(&serverAddr, 0, sizeof(serverAddr));
-	serverAddr.sin_family = AF_INET;
-	serverAddr.sin_port = htons(port);
-	serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-
-	//配置端口可重用
-	int opt = 1;
-	setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-	//绑定端口
-	if(bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)))
-	{
-		sysErr("bind");
-		return -1;
+	int serverSocket = initServer(*(short*)arg);
+	if(serverSocket == -1){
+		return (void*)NULL;
 	}
+	strErr("服务端初始化完毕...");
 
-	//监听，配置最大连接数
-	if(listen(serverSocket, SOMAXCONN))
-	{
-		sysErr("listen");
-		return -1;
-	}
-
+	//接收客户端的连接请求
 	int clientSocket;
 	struct sockaddr_in clientAddr;
 	socklen_t clientAddrLen = sizeof(clientAddr);
-	//接收客户端的连接请求
-	if((clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &clientAddrLen)) < 0)
-	{
-		sysErr("accept");
-		return -1;
-	}
-
-	printf("client: %s:%u connected!\n", inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
-	//关闭serverSocket
-	close(serverSocket);
-
-	return clientSocket;
-}
-
-int getHttpRequest(int sockFd)
-{
-	char buffer[1024], ch;
-	int index = 0;
-	while(read(sockFd, &ch, 1) > 0)
-	{
-		if(ch == '\n')
+	while(1){
+		if((clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &clientAddrLen)) < 0)
 		{
-			buffer[index] = '\0';
-			if(!strcmp("\r", trim(buffer)))
-			{
-				break;
-			}else
-			{
-				printf("%s\n", buffer);
+			sysErr("accept");
+		}else{
+			fprintf(stderr, "客户端: %s:%u 连接成功!\n", inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
+			getHttpRequest(clientSocket);
+			responseHttp(clientSocket);
+			
+			pthread_mutex_lock(&mutex); //加锁
+			int i;
+			for(i = 0; i < MAX_CLIENTS_COUNT; i++){
+				if(clients[i] == 0){
+					clients[i] = clientSocket;
+					if(i + 1 > clientCount){
+						clientCount = i + 1;
+					}
+					break;
+				}
 			}
-			index = 0;
-		}else
-		{
-			buffer[index++] = ch;
+			fprintf(stderr, "客户端数量: %lu\n", getValidClient());
+			pthread_mutex_unlock(&mutex); //解锁
 		}
 	}
+	
+	//关闭serverSocket
+	close(serverSocket);
+	strErr("服务端关闭...");
+}
+
+int main(int argc, char **argv)
+{
+	//默认端口号
+	short int port = 10000;
+	if(argc < 2){
+		fprintf(stderr, "-Usage: %s <dev> [port]\n", argv[0]);
+		return -1;
+	}else if(argc >= 3){
+		port = atoi(argv[2]);
+	}
+
+	int logFd = open("log/log", O_WRONLY|O_APPEND|O_CREAT, 0644);
+	if(logFd < 0){
+		sysErr("log日志打开失败！");
+	}else{
+		dup2(logFd, 1);
+		dup2(logFd, 2);
+	}
+
+	//忽略管道信号，当客户端结束时不要退出程序
+	signal(SIGPIPE, SIG_IGN);
+	
+	//开启线程监听客户端
+	pthread_t acceptClientThread;
+	pthread_create(&acceptClientThread, NULL, tAcceptClient, &port);
+
+	//初始化摄像头设备
+	init_dev(argv[1]);
+	//打开摄像头
+	cam_on();
+	get_dev_info();
+
+	int i;
+	while(1){
+		get_frame();
+
+		pthread_mutex_lock(&mutex);
+		for(i = 0; i < clientCount; i++){
+			if(clients[i] != 0){
+				if(sendPictureHeader(clients[i], buffer[okindex].length)){
+					struct sockaddr_in addr;
+					socklen_t len = sizeof(addr);
+					fprintf(stderr, "一个客户端断开连接！\n");
+					clients[i] = 0;
+					if(i == clientCount - 1){
+						clientCount--;
+					}
+					fprintf(stderr, "客户端数量: %lu\n", getValidClient());
+					continue;
+				}
+				print_picture(clients[i], buffer[okindex].start, buffer[okindex].length);
+			}
+		}
+		pthread_mutex_unlock(&mutex);
+	}
+
+	//关闭设备
+	cam_off();
+	uninit_dev();
+
 	return 0;
 }
 
-int responseHttp(int sockFd)
-{
-	char buffer[1024];
-	sprintf(buffer, "HTTP/1.0 200 OK\r\n"
-		"Connection: Keep-Alive\r\n"
-		"Server: Network camera\r\n"
-		"Cache-Control: no-cache,no-store,must-revalidate,pre-check=0,max-age=0\r\n"
-		"Pragma: no-cache\r\n"
-		"Content-Type: multipart/x-mixed-replace;boundary=KK\r\n");
-	if(write(sockFd, buffer, strlen(buffer)) != strlen(buffer))
-	{
-		sysErr("responseHttp head");
-		return -1;
-	}
-
-	int imgFd = open("a.jpg", O_RDONLY);
-	size_t size = 0;
-	if(imgFd < 0)
-	{
-		sysErr("open a.jpg");
-		return -1;
-	}else
-	{
-		struct stat st;
-		if(fstat(imgFd, &st))
-		{
-			sysErr("stat");
-		}
-		size = st.st_size;
-	}
-	
-	sprintf(buffer, "\r\n--KK\r\n"
-		"Content-Type: image/jpeg\n"
-		"Content-Length: %lu\n\n", size);
-	if(write(sockFd, buffer, strlen(buffer)) != strlen(buffer))
-	{
-		sysErr("responseHttp type");
-	}
-
-	while((size = read(imgFd, buffer, 1024)) > 0)
-	{
-		write(sockFd, buffer, size);
-	}
-
-	close(imgFd);
-
-}
-
 /**
- * 去除命令行两边的空格
+ * 获取有效用户数量
+ * @return 返回有效用户个数
  */
-char *trim(char *cmd)
+size_t getValidClient()
 {
-	while(*cmd == ' ') cmd++;
-	char *end = cmd + strlen(cmd) - 1;
-	while(*end == ' ') *end-- = '\0';
-	return cmd;
+	int i;
+	size_t ret = 0;
+	for(i = 0; i < clientCount; i++){
+		if(clients[i] != 0){
+			ret++;
+		}
+	}
+	return ret;
 }
+
