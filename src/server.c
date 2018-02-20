@@ -84,13 +84,13 @@ int main(int argc, char **argv)
 		port = atoi(argv[2]);
 	}
 
-	int logFd = open("log/log", O_WRONLY|O_APPEND|O_CREAT, 0644);
-	if(logFd < 0){
-		sysErr("log日志打开失败！");
-	}else{
-		dup2(logFd, 1);
-		dup2(logFd, 2);
-	}
+//	int logFd = open("log/log", O_WRONLY|O_APPEND|O_CREAT, 0644);
+//	if(logFd < 0){
+//		sysErr("log日志打开失败！");
+//	}else{
+//		dup2(logFd, 1);
+//		dup2(logFd, 2);
+//	}
 
 	//忽略管道信号，当客户端结束时不要退出程序
 	signal(SIGPIPE, SIG_IGN);

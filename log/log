@@ -170,3 +170,24 @@ Q_buf_init
 客户端数量: 4
 一个客户端断开连接！
 客户端数量: 3
+服务端初始化完毕...
+format
+Req_bufs
+Query_buf
+Mmap
+Query_buf
+Mmap
+Query_buf
+Mmap
+Query_buf
+Mmap
+camera on
+Q_buf_init
+Q_buf_init
+Q_buf_init
+Q_buf_init
+客户端: 192.168.47.1:54071 连接成功!
+客户端数量: 1
+客户端: 192.168.47.1:54070 连接成功!
+一个客户端断开连接！
+客户端数量: 0

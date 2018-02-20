@@ -71,9 +71,8 @@ int responseHttp(int sockFd)
 		"Server: Network camera\r\n"
 		"Cache-Control: no-cache,no-store,must-revalidate,pre-check=0,max-age=0\r\n"
 		"Pragma: no-cache\r\n"
-		"Content-Type: multipart/x-mixed-replace;boundary=KK\r\n");
-	if(write(sockFd, buffer, strlen(buffer)) != strlen(buffer))
-	{
+		"Content-Type: multipart/x-mixed-replace;boundary=KK\r\n\r\n");
+	if(write(sockFd, buffer, strlen(buffer)) != strlen(buffer)){
 		sysErr("responseHttp");
 		return -1;
 	}
@@ -83,12 +82,11 @@ int responseHttp(int sockFd)
 int sendPictureHeader(int sockFd, size_t size)
 {
 	char buffer[128];
-	sprintf(buffer, "\r\n--KK\r\n"
-		"Content-Type: image/jpeg\n"
-		"Content-Length: %lu\n\n", size);
-	if(write(sockFd, buffer, strlen(buffer)) != strlen(buffer))
-	{
-		//sysErr("responseHttp type");
+	sprintf(buffer, "--KK\r\n"
+		"Content-Type: image/jpeg\r\n"
+		"Content-Length: %lu\r\n\r\n", size);
+	if(write(sockFd, buffer, strlen(buffer)) != strlen(buffer)){
+		sysErr("responseHttp type");
 		return -1;
 	}
 	return 0;
